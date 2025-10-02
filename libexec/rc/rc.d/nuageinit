@@ -26,6 +26,29 @@ fetch_openstack()
 	cd -
 }
 
+fetch_scaleway()
+{
+	cd /media/nuageinit/scaleway
+	metadata_server="169.254.42.42"
+	fetch -o meta_data.json http://$metadata_server/conf?format=json || :
+
+	# Scaleway's metadata service requires user data to be
+	# fetched using a privileged port. `fetch` does not support
+	# this.
+	printf "GET /user_data/cloud-init HTTP/1.0\r\n\r\n" | \
+	nc -p 601 $metadata_server 80 | \
+	tr -d '\r' | 
+	sed '1,/^$/d' > user_data
+	
+	if [ -s user_data ]; then
+		chmod 755 user_data
+	else
+		rm -f user_data
+	fi
+	
+	cd -
+}
+
 nuageinit_start()
 {
 	local citype
@@ -62,6 +85,15 @@ nuageinit_start()
 			pkill -F /tmp/ephemeraldhcp.pid
 			citype=config-2
 			;;
+		SCW*)
+			mkdir -p /media/nuageinit/scaleway
+			ifaces=$(ifconfig -l ether)
+			set -- $ifaces
+			dhclient -p /tmp/ephemeraldhcp.pid $1
+			fetch_scaleway
+			pkill -F /tmp/ephemeraldhcp.pid
+			citype=scaleway
+			;;
 		*)
 			# try to detect networked based instance
 			err 1 "Impossible to find a cloud init provider"
@@ -82,6 +114,9 @@ nuageinit_start()
 		;;
 	nocloud)
 		/usr/libexec/nuageinit /media/nuageinit $citype 2>&1 | tee -a /var/log/nuageinit.log
+		;;
+	scaleway)
+		/usr/libexec/nuageinit /media/nuageinit/scaleway $citype 2>&1 | tee -a /var/log/nuageinit.log
 		;;
 	esac
 	if [ -n "$drive" ]; then

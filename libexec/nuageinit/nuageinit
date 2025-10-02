@@ -10,7 +10,7 @@ local ucl = require("ucl")
 local yaml = require("lyaml")
 
 if #arg ~= 2 then
-	nuage.err("Usage: " .. arg[0] .. " <cloud-init-directory> (<config-2> | <nocloud>)", false)
+	nuage.err("Usage: " .. arg[0] .. " <cloud-init-directory> (<config-2> | <nocloud> | <scaleway>)", false)
 end
 local ni_path = arg[1]
 local citype = arg[2]
@@ -624,6 +624,23 @@ if citype == "config-2" then
 
 	-- network
 	config2_network(ni_path)
+elseif citype == "scaleway" then
+	local parser = ucl.parser()
+	local res, err = parser:parse_file(ni_path .. "/meta_data.json")
+
+	if not res then
+		nuage.err("error parsing scaleway meta_data.json: " .. err)
+	end
+	local obj = parser:get_object()
+	if obj.ssh_public_keys then
+		local homedir = nuage.adduser(default_user)
+		for _, v in pairs(obj.ssh_public_keys) do
+			if v.key then
+				nuage.addsshkey(homedir, v.key)
+			end
+		end
+	end
+    nuage.sethostname(obj["hostname"])
 elseif citype == "nocloud" then
 	local f, err = io.open(ni_path .. "/meta-data")
 	if err then
